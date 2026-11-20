@@ -144,11 +144,21 @@
     {
       "args": [
         "drain",
-        "agentops-1-control-plane",
-        "--ignore-daemonsets"
+        "agentops-1-control-plane"
       ],
       "want": "refused:scope",
       "got": "refused:scope",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "drain",
+        "agentops-1-control-plane",
+        "--ignore-daemonsets"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
       "ok": true,
       "hole": null
     },
@@ -380,6 +390,229 @@
     },
     {
       "args": [
+        "--request-timeout",
+        "5s",
+        "exec",
+        "cache-x",
+        "--",
+        "sh"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "-v",
+        "9",
+        "delete",
+        "namespace",
+        "shop"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "--log-file",
+        "x",
+        "delete",
+        "deployment",
+        "api"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "get",
+        "pods",
+        "--made-up-flag",
+        "exec"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "--namespace",
+        "payments",
+        "delete",
+        "pod",
+        "payments-api-x"
+      ],
+      "want": "refused:scope",
+      "got": "refused:scope",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "-n",
+        "shop",
+        "patch",
+        "deployment",
+        "worker",
+        "-p",
+        "{\"spec\":{\"replicas\":50}}"
+      ],
+      "want": "refused:blast-radius",
+      "got": "refused:blast-radius",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "api",
+        "--patch-file",
+        "/etc/passwd"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "get",
+        "pods",
+        "-o",
+        "go-template",
+        "--template",
+        "/etc/passwd"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "get",
+        "pods",
+        "-o",
+        "go-template-file=/etc/passwd"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "get",
+        "pods",
+        "--output=jsonpath-file=/etc/passwd"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "get",
+        "pods",
+        "-ocustom-columns-file=/etc/passwd"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "get",
+        "pods",
+        "--profile",
+        "cpu",
+        "--profile-output",
+        "/tmp/x"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "get",
+        "pods",
+        "--cache-dir",
+        "/tmp/x"
+      ],
+      "want": "host-deny",
+      "got": "host-deny",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "worker",
+        "--type=json",
+        "-p",
+        "[{\"op\":\"replace\",\"path\":\"/spec\",\"value\":{\"replicas\":50}}]"
+      ],
+      "want": "refused:blast-radius",
+      "got": "refused:blast-radius",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "worker",
+        "--type=json",
+        "-p",
+        "[{\"op\":\"add\",\"path\":\"\",\"value\":{\"spec\":{\"replicas\":50}}}]"
+      ],
+      "want": "refused:blast-radius",
+      "got": "refused:blast-radius",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "worker",
+        "--type=json",
+        "-p",
+        "not json"
+      ],
+      "want": "refused:parse",
+      "got": "refused:parse",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "worker",
+        "--type=json",
+        "-p",
+        "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/resources/limits/memory\",\"value\":\"4Gi\"}]"
+      ],
+      "want": "allow",
+      "got": "allow",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
         "patch",
         "deployment",
         "cache",
@@ -396,20 +629,6 @@
       "args": [
         "patch",
         "deployment",
-        "worker",
-        "--type=json",
-        "-p",
-        "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/resources/limits/memory\",\"value\":\"4Gi\"}]"
-      ],
-      "want": "allow",
-      "got": "allow",
-      "ok": true,
-      "hole": "raises memory past the 256Mi cap through a JSON patch instead of set resources"
-    },
-    {
-      "args": [
-        "patch",
-        "deployment",
         "api",
         "--type=json",
         "-p",
@@ -419,6 +638,38 @@
       "got": "allow",
       "ok": true,
       "hole": "replaces the secret reference with an empty password"
+    }
+  ],
+  "resultCases": [
+    {
+      "label": "worker 5 replicas, 128Mi",
+      "want": "allow",
+      "got": "allow",
+      "ok": true
+    },
+    {
+      "label": "worker 50 replicas (patch on /spec)",
+      "want": "refused:blast-radius",
+      "got": "refused:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "worker 4Gi memory (JSON patch)",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "web scaled to 0 by the change",
+      "want": "refused:blast-radius",
+      "got": "refused:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "web already at 0 (the incident), image change only",
+      "want": "allow",
+      "got": "allow",
+      "ok": true
     }
   ],
   "live": null

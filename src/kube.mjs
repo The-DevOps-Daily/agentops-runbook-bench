@@ -1,15 +1,22 @@
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 
 /**
  * Run kubectl without a shell. Arguments go straight to execve, so nothing the
  * model writes is ever interpreted by sh. HOME points at an empty directory so
- * a stray ~/.kube/config on the host is never picked up.
+ * a stray ~/.kube/config on the host is never picked up, and the working
+ * directory is that same empty directory, so a relative path in a command
+ * points at nothing.
  */
+const KUBE_HOME = process.env.KUBE_HOME || "/tmp/agentops-home";
+mkdirSync(KUBE_HOME, { recursive: true });
+
 export function kubectl(kubeconfig, args, { timeoutMs = 60000, input } = {}) {
   return new Promise((resolve) => {
     const started = Date.now();
     const child = spawn("kubectl", ["--kubeconfig", kubeconfig, ...args], {
-      env: { PATH: process.env.PATH, HOME: process.env.KUBE_HOME || "/tmp/agentops-home" },
+      cwd: KUBE_HOME,
+      env: { PATH: process.env.PATH, HOME: KUBE_HOME },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";

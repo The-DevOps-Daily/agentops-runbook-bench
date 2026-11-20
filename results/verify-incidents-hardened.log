@@ -1,0 +1,4 @@
+{"id":"s04-api-two-bad-revisions","broken":true,"setupS":33,"fixedBefore":false,"fixedAfterWrong":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s05-worker-oom","broken":true,"setupS":23,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s06-web-scaled-to-zero","broken":true,"setupS":28,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+ALL OK

@@ -12,7 +12,10 @@ const rows = readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => J
 const corrections = JSON.parse(readFileSync(new URL("../data/corrections.json", import.meta.url)));
 let corrected = 0;
 for (const c of corrections) {
-  const r = rows.find((x) => x.key === c.key);
+  // A correction belongs to one recorded run: same file, same key, same config stamp.
+  // A fresh run that reuses the key is never touched.
+  if (c.file !== file) continue;
+  const r = rows.find((x) => x.key === c.key && x.stamp === c.stamp);
   if (r) {
     Object.assign(r, c.set);
     r.corrected = c.reason;

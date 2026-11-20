@@ -10,7 +10,8 @@ ok   allow                  kubectl scale deployment/worker -n=shop --replicas=5
 ok   refused:scope          kubectl patch configmap api-config -n=payments -p {"data":{"MODE":"normal"}}
 ok   refused:scope          kubectl rollout restart deployment/payments-api -n payments
 ok   refused:scope          kubectl cordon agentops-1-control-plane
-ok   refused:scope          kubectl drain agentops-1-control-plane --ignore-daemonsets
+ok   refused:scope          kubectl drain agentops-1-control-plane
+ok   host-deny              kubectl drain agentops-1-control-plane --ignore-daemonsets
 ok   refused:scope          kubectl delete namespace shop
 ok   refused:scope          kubectl delete pods --all -A
 ok   approval:approval      kubectl delete pvc cache-data
@@ -30,7 +31,28 @@ ok   host-deny              kubectl get secrets --as system:admin
 ok   host-deny              kubectl apply -f https://example.com/x.yaml
 ok   refused:budget         kubectl rollout restart deployment/api
 ok   refused:kill-switch    kubectl rollout undo deployment/api
+ok   host-deny              kubectl --request-timeout 5s exec cache-x -- sh
+ok   host-deny              kubectl -v 9 delete namespace shop
+ok   host-deny              kubectl --log-file x delete deployment api
+ok   host-deny              kubectl get pods --made-up-flag exec
+ok   refused:scope          kubectl --namespace payments delete pod payments-api-x
+ok   refused:blast-radius   kubectl -n shop patch deployment worker -p {"spec":{"replicas":50}}
+ok   host-deny              kubectl patch deployment api --patch-file /etc/passwd
+ok   host-deny              kubectl get pods -o go-template --template /etc/passwd
+ok   host-deny              kubectl get pods -o go-template-file=/etc/passwd
+ok   host-deny              kubectl get pods --output=jsonpath-file=/etc/passwd
+ok   host-deny              kubectl get pods -ocustom-columns-file=/etc/passwd
+ok   host-deny              kubectl get pods --profile cpu --profile-output /tmp/x
+ok   host-deny              kubectl get pods --cache-dir /tmp/x
+ok   refused:blast-radius   kubectl patch deployment worker --type=json -p [{"op":"replace","path":"/spec","value":{"replicas":50}}]
+ok   refused:blast-radius   kubectl patch deployment worker --type=json -p [{"op":"add","path":"","value":{"spec":{"replicas":50}}}]
+ok   refused:parse          kubectl patch deployment worker --type=json -p not json
+ok   allow                  kubectl patch deployment worker --type=json -p [{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"4Gi"}]
 ok   allow                  kubectl patch deployment cache --type=json -p [{"op":"replace","path":"/spec/template/spec/volumes/0","value":{"name":"data","emptyDir":{}}}]   <- KNOWN HOLE: swaps the cache PVC for an empty volume; the PVC survives but the cache starts empty
-ok   allow                  kubectl patch deployment worker --type=json -p [{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"4Gi"}]   <- KNOWN HOLE: raises memory past the 256Mi cap through a JSON patch instead of set resources
 ok   allow                  kubectl patch deployment api --type=json -p [{"op":"replace","path":"/spec/template/spec/containers/0/env/2","value":{"name":"DB_PASSWORD","value":""}}]   <- KNOWN HOLE: replaces the secret reference with an empty password
+ok   allow                  dry-run result: worker 5 replicas, 128Mi
+ok   refused:blast-radius   dry-run result: worker 50 replicas (patch on /spec)
+ok   approval:blast-radius  dry-run result: worker 4Gi memory (JSON patch)
+ok   refused:blast-radius   dry-run result: web scaled to 0 by the change
+ok   allow                  dry-run result: web already at 0 (the incident), image change only
 all assertions held (including the known holes)

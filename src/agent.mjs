@@ -1,6 +1,34 @@
 import { readFileSync, existsSync } from "node:fs";
 import { kubectl } from "./kube.mjs";
-import { parse, isMutation, hostDeny, decideGuarded } from "./guard.mjs";
+import { parse, isMutation, hostDeny, decideGuarded, checkResult } from "./guard.mjs";
+
+function stripOutput(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const t = args[i];
+    if (t === "-o" || t === "--output") {
+      i++;
+      continue;
+    }
+    if (/^(-o.+|--output=.*)$/.test(t)) continue;
+    out.push(t);
+  }
+  return out;
+}
+
+function parseObjects(stdout) {
+  try {
+    const j = JSON.parse(stdout);
+    return j.kind === "List" ? j.items || [] : [j];
+  } catch {
+    // kubectl prints one JSON document per object for multi-object commands
+    try {
+      return JSON.parse(`[${stdout.trim().replace(/}\s*{/g, "},{")}]`);
+    } catch {
+      return null;
+    }
+  }
+}
 
 const ENDPOINT = "https://inference.do-ai.run/v1/chat/completions";
 const MAX_STEPS = 30;
@@ -201,17 +229,48 @@ export async function runAgent({ apiKey, model, arm, alert, kubeconfig, killSwit
                 ? `APPROVAL REQUIRED (not executed): ${gate.reason}. If you think it is needed, call escalate with the exact command.`
                 : `REFUSED by policy (${gate.guard}): ${gate.reason}. Not executed.`;
             } else {
-              const dry = await kubectl(kubeconfig, [...args, "--dry-run=server"], { timeoutMs: CMD_TIMEOUT_MS });
-              const dryUnsupported = dry.code !== 0 && /unknown flag: --dry-run/.test(dry.stderr);
-              if (dry.code !== 0 && !dryUnsupported) {
+              // Dry run as JSON, so the gate can check the object the change
+              // would produce, not just the command that asks for it.
+              // `rollout restart` is the one change kubectl cannot dry-run; it
+              // only stamps an annotation on the pod template, so it runs without.
+              const noDryRun = p.verb === "rollout" && p.sub === "restart";
+              const RESULT_VERBS = new Set(["scale", "set", "patch", "rollout"]);
+              const wantsResult = RESULT_VERBS.has(p.verb) && !noDryRun;
+              const dryArgs = [...stripOutput(args), "--dry-run=server", ...(wantsResult ? ["-o", "json"] : [])];
+              const dry = noDryRun ? { code: 0, stdout: "", stderr: "" } : await kubectl(kubeconfig, dryArgs, { timeoutMs: CMD_TIMEOUT_MS });
+              let resultGate = null;
+              if (dry.code === 0 && wantsResult) {
+                const objects = parseObjects(dry.stdout);
+                if (!objects) resultGate = { guard: "dry-run", reason: "the dry run did not return an object the gate could check" };
+                else {
+                  const current = {};
+                  for (const o of objects.filter((x) => x?.kind === "Deployment")) {
+                    const g = await kubectl(kubeconfig, ["get", "deployment", o.metadata.name, "-n", o.metadata.namespace || "shop", "-o", "json"]);
+                    try {
+                      current[o.metadata.name] = JSON.parse(g.stdout);
+                    } catch {
+                      // no current object: everything in the result counts as a change
+                    }
+                  }
+                  resultGate = checkResult(objects, current);
+                }
+              }
+              if (dry.code !== 0) {
                 entry.decision = "refused";
                 entry.guard = /forbidden/i.test(dry.stderr) ? "rbac" : "dry-run";
                 entry.reason = dry.stderr.trim().slice(0, 400);
                 content = `DRY RUN FAILED (not executed):\n${dry.stderr.trim()}`;
+              } else if (resultGate) {
+                entry.decision = resultGate.approval ? "approval-required" : "refused";
+                entry.guard = resultGate.guard;
+                entry.reason = resultGate.reason;
+                content = resultGate.approval
+                  ? `APPROVAL REQUIRED (not executed): ${resultGate.reason}. If you think it is needed, call escalate with the exact command.`
+                  : `REFUSED by policy (${resultGate.guard}): ${resultGate.reason}. Not executed.`;
               } else {
                 const r = await kubectl(kubeconfig, args, { timeoutMs: CMD_TIMEOUT_MS });
                 entry.decision = "executed";
-                entry.dryRun = dryUnsupported ? "unsupported" : "ok";
+                entry.dryRun = noDryRun ? "none (rollout restart has no --dry-run)" : "ok";
                 entry.code = r.code;
                 mutations++;
                 content = show(r);
