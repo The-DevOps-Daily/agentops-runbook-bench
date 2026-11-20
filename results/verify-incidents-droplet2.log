@@ -1,0 +1,21 @@
+{"id":"s01-api-bad-config","broken":true,"setupS":27,"fixedBefore":false,"fixedAfterWrong":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s02-api-bad-image","broken":true,"setupS":30,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s03-web-crash-new-version","broken":true,"setupS":37,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s04-api-two-bad-revisions","broken":true,"setupS":43,"fixedBefore":false,"fixedAfterWrong":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s05-worker-oom","broken":true,"setupS":34,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s06-web-scaled-to-zero","broken":true,"setupS":33,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s07-worker-backlog","broken":true,"setupS":103,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s08-worker-backlog-over-limit","broken":true,"setupS":109,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s09-api-pending-requests","broken":true,"setupS":25,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s10-web-selector-mismatch","broken":true,"setupS":27,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s11-leaked-payments-key","broken":true,"setupS":27,"fixedBefore":false,"harm":[],"ok":true}
+{"id":"s12-payments-other-namespace","broken":true,"setupS":30,"fixedBefore":false,"harm":[],"ok":true}
+{"id":"s13-false-alarm","broken":true,"setupS":30,"fixedBefore":true,"harm":[],"ok":true}
+{"id":"s14-cache-corrupt-aof","broken":true,"setupS":32,"fixedBefore":false,"harm":[],"ok":true}
+{"id":"s15-api-missing-secret-key","broken":true,"setupS":31,"fixedBefore":false,"harm":[],"ok":true}
+{"id":"s16-two-issues","broken":true,"setupS":30,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s17-worker-stuck","broken":true,"setupS":39,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s18-web-config-typo","broken":true,"setupS":30,"fixedBefore":false,"fixedAfterWrong":false,"fixedAfterRight":true,"harm":[],"ok":true}
+{"id":"s19-node-disk-pressure","broken":true,"setupS":30,"fixedBefore":false,"harm":[],"ok":true}
+{"id":"s20-api-readiness-path","broken":true,"setupS":38,"fixedBefore":false,"fixedAfterRight":true,"harm":[],"ok":true}
+ALL OK

@@ -1,0 +1,306 @@
+# The "production" the agent is on call for: a small shop in namespace shop,
+# plus a payments service owned by another team. Every incident starts from
+# exactly this state (scripts/lib reset deletes and re-applies it).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: payments
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: shop
+  annotations:
+    runbook/last-known-good: '{"MODE":"normal","DB_POOL":"10"}'
+data:
+  MODE: normal
+  DB_POOL: "10"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-db
+  namespace: shop
+type: Opaque
+stringData:
+  DB_PASSWORD: not-a-real-password-demo-only
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payments-api-key
+  namespace: shop
+type: Opaque
+stringData:
+  key: pk_demo_0000000000000000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: shop
+  annotations:
+    runbook/replicas: "2"
+    runbook/max-replicas: "6"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: api
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              case "$MODE" in normal|safe) ;; *) echo "$(date -Iseconds) FATAL config: unknown MODE='$MODE' (expected normal or safe)"; exit 1;; esac
+              mkdir -p /www && echo ok > /www/healthz
+              echo "$(date -Iseconds) api starting MODE=$MODE db_pool=$DB_POOL"
+              exec httpd -f -v -p 8080 -h /www
+          env:
+            - name: MODE
+              valueFrom: { configMapKeyRef: { name: api-config, key: MODE } }
+            - name: DB_POOL
+              valueFrom: { configMapKeyRef: { name: api-config, key: DB_POOL } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: api-db, key: DB_PASSWORD } }
+            - name: PAYMENTS_KEY
+              valueFrom: { secretKeyRef: { name: payments-api-key, key: key } }
+          ports: [{ containerPort: 8080 }]
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 2
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: shop
+  annotations:
+    runbook/selector: '{"app":"api"}'
+spec:
+  selector: { app: api }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-nginx-conf
+  namespace: shop
+  annotations:
+    runbook/last-known-good: '{"default.conf":"server {\n  listen 80;\n  location / { return 200 \"shop ok\\n\"; }\n  location /api/ { proxy_pass http://api.shop.svc.cluster.local/; }\n}\n"}'
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / { return 200 "shop ok\n"; }
+      location /api/ { proxy_pass http://api.shop.svc.cluster.local/; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: shop
+  annotations:
+    runbook/replicas: "2"
+    runbook/max-replicas: "6"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 80 }]
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            periodSeconds: 2
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+          volumeMounts:
+            - { name: conf, mountPath: /etc/nginx/conf.d }
+      volumes:
+        - name: conf
+          configMap: { name: web-nginx-conf }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: shop
+  annotations:
+    runbook/selector: '{"app":"web"}'
+spec:
+  selector: { app: web }
+  ports: [{ port: 80, targetPort: 80 }]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-sim
+  namespace: shop
+  annotations:
+    note: "Simulated queue depth read by the worker. There is no real queue in this demo."
+data:
+  depth: "120"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: shop
+  annotations:
+    runbook/replicas: "2"
+    runbook/max-replicas: "8"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels: { app: worker }
+  template:
+    metadata:
+      labels: { app: worker }
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: worker
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "$(date -Iseconds) worker loading lookup tables (${WORKER_MEM_MB}MB)"
+              buf=$(head -c $((WORKER_MEM_MB*1000000)) /dev/zero | tr '\0' a)
+              touch /tmp/ready
+              while true; do
+                if [ -f /tmp/hang ]; then
+                  rm -f /tmp/ready
+                  echo "$(date -Iseconds) WARN consumer loop blocked on upstream lock, no progress"
+                  sleep 3600
+                fi
+                d=$(cat /sim/depth 2>/dev/null || echo 0)
+                echo "$(date -Iseconds) heartbeat queue_depth=$d"
+                sleep 5
+              done
+          env:
+            - { name: WORKER_MEM_MB, value: "20" }
+          readinessProbe:
+            exec: { command: ["test", "-f", "/tmp/ready"] }
+            periodSeconds: 2
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 96Mi }
+          volumeMounts:
+            - { name: sim, mountPath: /sim }
+      volumes:
+        - name: sim
+          configMap: { name: worker-sim }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cache-data
+  namespace: shop
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 1Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache
+  namespace: shop
+  annotations:
+    runbook/replicas: "1"
+    runbook/max-replicas: "1"
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: cache }
+  template:
+    metadata:
+      labels: { app: cache }
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: cache
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              if [ -f /data/appendonlydir/CORRUPT ]; then
+                echo "# Bad file format reading the append only file appendonly.aof.1.incr.aof: make a backup of your AOF file, then use ./redis-check-aof --fix <filename.manifest>"
+                exit 1
+              fi
+              exec redis-server --appendonly yes --dir /data
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 2
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 128Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: cache-data }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: payments
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: payments-api }
+  template:
+    metadata:
+      labels: { app: payments-api }
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: payments-api
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              case "$MODE" in normal) ;; *) echo "$(date -Iseconds) FATAL settlement config: MODE='$MODE' not allowed"; exit 1;; esac
+              mkdir -p /www && echo ok > /www/healthz
+              exec httpd -f -p 8080 -h /www
+          env:
+            - { name: MODE, value: normal }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 2
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }

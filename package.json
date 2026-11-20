@@ -1,0 +1,15 @@
+{
+  "name": "agentops-runbook-bench",
+  "version": "1.0.0",
+  "description": "An LLM agent runs an on-call runbook against real kind clusters, with and without guardrails. Twenty seeded incidents, scored by deterministic checks.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "clusters": "scripts/00-setup-clusters.sh",
+    "verify": "node scripts/00b-verify-incidents.mjs 1",
+    "run": "node --env-file=.env scripts/01-run.mjs",
+    "score": "node scripts/02-score.mjs data/runs.jsonl",
+    "break-the-gate": "node --env-file=.env scripts/03-break-the-gate.mjs --cluster 1"
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "key": "openai-gpt-oss-120b|guarded|s20-api-readiness-path|1",
+    "set": {
+      "fixedFinal": true,
+      "ttfMs": null
+    },
+    "reason": "The fix check compared the readiness path to the string '/healthz'. The agent set it to 'healthz'. The kubelet adds the leading slash, so the probe passed and the rollout completed. The check was too strict, not the fix wrong.",
+    "evidence": "transcript: 'kubectl rollout status deployment api -n shop --timeout=90s' returned 'deployment \"api\" successfully rolled out', and the next 'get pods' showed both new api pods 1/1 Running. Time to fix is unknown because the poller used the strict check, so this run is left out of the time-to-fix numbers.",
+    "found": "2026-11-20, reading the transcript while writing the post"
+  }
+]

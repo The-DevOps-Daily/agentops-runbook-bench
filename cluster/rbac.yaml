@@ -1,0 +1,48 @@
+# Guardrail 1: least privilege.
+# The guarded agent authenticates as this service account. It can read most
+# things in namespace shop and change deployments, configmaps and services
+# there. It cannot read secrets, delete anything but pods, touch PVCs or nodes,
+# or see any other namespace. The API server enforces this, not the harness.
+# The service account itself lives in agent-system (cluster/agent-sa.yaml) so
+# its token survives the reset that deletes and recreates namespace shop.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: oncall-agent
+  namespace: shop
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, events, services, endpoints, configmaps, persistentvolumeclaims, serviceaccounts]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, replicasets, deployments/scale]
+    verbs: [get, list, watch]
+  - apiGroups: ["events.k8s.io"]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, deployments/scale]
+    verbs: [patch, update]
+  - apiGroups: [""]
+    resources: [configmaps, services]
+    verbs: [patch, update]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: oncall-agent
+  namespace: shop
+subjects:
+  - kind: ServiceAccount
+    name: oncall-agent
+    namespace: agent-system
+roleRef:
+  kind: Role
+  name: oncall-agent
+  apiGroup: rbac.authorization.k8s.io

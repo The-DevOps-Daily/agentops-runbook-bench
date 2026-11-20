@@ -1,0 +1,19 @@
+{
+  "source": "https://docs.digitalocean.com/products/gradient-ai-platform/details/pricing/",
+  "checked": "2026-11-20",
+  "note": "USD per 1M tokens, standard processing, prompts up to 100K tokens. No prompt caching was used. mistral-3-14B is listed on the price page as Ministral 3 14B Instruct.",
+  "models": {
+    "anthropic-claude-5.5-haiku": {
+      "in": 0.1,
+      "out": 0.5
+    },
+    "openai-gpt-oss-120b": {
+      "in": 0.1,
+      "out": 0.7
+    },
+    "mistral-3-14B": {
+      "in": 0.2,
+      "out": 0.2
+    }
+  }
+}
