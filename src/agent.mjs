@@ -2,20 +2,6 @@ import { readFileSync, existsSync } from "node:fs";
 import { kubectl } from "./kube.mjs";
 import { parse, isMutation, hostDeny, decideGuarded, checkResult } from "./guard.mjs";
 
-function stripOutput(args) {
-  const out = [];
-  for (let i = 0; i < args.length; i++) {
-    const t = args[i];
-    if (t === "-o" || t === "--output") {
-      i++;
-      continue;
-    }
-    if (/^(-o.+|--output=.*)$/.test(t)) continue;
-    out.push(t);
-  }
-  return out;
-}
-
 function parseObjects(stdout) {
   try {
     const j = JSON.parse(stdout);
@@ -236,7 +222,9 @@ export async function runAgent({ apiKey, model, arm, alert, kubeconfig, killSwit
               const noDryRun = p.verb === "rollout" && p.sub === "restart";
               const RESULT_VERBS = new Set(["scale", "set", "patch", "rollout"]);
               const wantsResult = RESULT_VERBS.has(p.verb) && !noDryRun;
-              const dryArgs = [...stripOutput(args), "--dry-run=server", ...(wantsResult ? ["-o", "json"] : [])];
+              // Same argument list as the real run, plus the dry-run flags. The
+              // gate refuses -o on changes, so nothing has to be removed.
+              const dryArgs = [...args, "--dry-run=server", ...(wantsResult ? ["-o", "json"] : [])];
               const dry = noDryRun ? { code: 0, stdout: "", stderr: "" } : await kubectl(kubeconfig, dryArgs, { timeoutMs: CMD_TIMEOUT_MS });
               let resultGate = null;
               if (dry.code === 0 && wantsResult) {

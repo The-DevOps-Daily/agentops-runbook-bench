@@ -87,6 +87,19 @@ const CASES = [
   [["patch", "deployment", "worker", "--type=json", "-p", '[{"op":"replace","path":"/spec","value":{"replicas":50}}]'], "refused:blast-radius"],
   [["patch", "deployment", "worker", "--type=json", "-p", '[{"op":"add","path":"","value":{"spec":{"replicas":50}}}]'], "refused:blast-radius"],
   [["patch", "deployment", "worker", "--type=json", "-p", "not json"], "refused:parse"],
+  // Second review: the dry run must check the same arguments that run, so a
+  // change may not pick its own output format.
+  [["patch", "deployment", "worker", "-o", "yaml", "-p", '{"spec":{"replicas":3}}'], "refused:parse"],
+  [["scale", "deployment/worker", "--replicas=5", "--output=name"], "refused:parse"],
+  // Aliases are one option; the last value wins, as in kubectl.
+  [["-n", "payments", "--namespace", "shop", "delete", "pod", "worker-x"], "allow"],
+  [["--namespace", "shop", "-n", "payments", "delete", "pod", "payments-api-x"], "refused:scope"],
+  [["delete", "pod", "payments-api-x", "-n", "shop", "--namespace=payments"], "refused:scope"],
+  [["patch", "deployment", "worker", "-p", '{"spec":{"replicas":3}}', "--patch", '{"spec":{"replicas":50}}'], "refused:blast-radius"],
+  [["patch", "deployment", "worker", "--patch", '{"spec":{"replicas":50}}', "-p", '{"spec":{"replicas":3}}'], "allow"],
+  [["logs", "worker-x", "-p"], "read"],
+  // Memory requests count against the cap too.
+  [["set", "resources", "deployment/worker", "--requests=memory=2Gi"], "approval:blast-radius"],
   // Raising memory through a JSON patch passes the command check; the check on
   // the dry-run result refuses it (asserted live below and in RESULT_CASES).
   [["patch", "deployment", "worker", "--type=json", "-p", '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"4Gi"}]'], "allow"],
@@ -111,6 +124,8 @@ const RESULT_CASES = [
   ["worker 4Gi memory (JSON patch)", [dep("worker", 2, "4Gi")], "approval:blast-radius"],
   ["web scaled to 0 by the change", [dep("web", 0, "64Mi")], "refused:blast-radius", { web: dep("web", 2, "64Mi") }],
   ["web already at 0 (the incident), image change only", [dep("web", 0, "64Mi")], "allow"],
+  ["worker memory limit removed", [dep("worker", 2, undefined)], "approval:blast-radius"],
+  ["worker memory request 1Gi", [{ ...dep("worker", 2, "96Mi"), spec: { replicas: 2, template: { spec: { containers: [{ name: "worker", resources: { limits: { memory: "96Mi" }, requests: { memory: "1Gi" } } }] } } } }], "approval:blast-radius"],
 ];
 let failures = 0;
 for (const [args, want, ctx = {}] of CASES) {

@@ -602,6 +602,130 @@
         "patch",
         "deployment",
         "worker",
+        "-o",
+        "yaml",
+        "-p",
+        "{\"spec\":{\"replicas\":3}}"
+      ],
+      "want": "refused:parse",
+      "got": "refused:parse",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "scale",
+        "deployment/worker",
+        "--replicas=5",
+        "--output=name"
+      ],
+      "want": "refused:parse",
+      "got": "refused:parse",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "-n",
+        "payments",
+        "--namespace",
+        "shop",
+        "delete",
+        "pod",
+        "worker-x"
+      ],
+      "want": "allow",
+      "got": "allow",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "--namespace",
+        "shop",
+        "-n",
+        "payments",
+        "delete",
+        "pod",
+        "payments-api-x"
+      ],
+      "want": "refused:scope",
+      "got": "refused:scope",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "delete",
+        "pod",
+        "payments-api-x",
+        "-n",
+        "shop",
+        "--namespace=payments"
+      ],
+      "want": "refused:scope",
+      "got": "refused:scope",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "worker",
+        "-p",
+        "{\"spec\":{\"replicas\":3}}",
+        "--patch",
+        "{\"spec\":{\"replicas\":50}}"
+      ],
+      "want": "refused:blast-radius",
+      "got": "refused:blast-radius",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "worker",
+        "--patch",
+        "{\"spec\":{\"replicas\":50}}",
+        "-p",
+        "{\"spec\":{\"replicas\":3}}"
+      ],
+      "want": "allow",
+      "got": "allow",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "logs",
+        "worker-x",
+        "-p"
+      ],
+      "want": "read",
+      "got": "read",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "set",
+        "resources",
+        "deployment/worker",
+        "--requests=memory=2Gi"
+      ],
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "patch",
+        "deployment",
+        "worker",
         "--type=json",
         "-p",
         "[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/resources/limits/memory\",\"value\":\"4Gi\"}]"
@@ -669,6 +793,18 @@
       "label": "web already at 0 (the incident), image change only",
       "want": "allow",
       "got": "allow",
+      "ok": true
+    },
+    {
+      "label": "worker memory limit removed",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "worker memory request 1Gi",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
       "ok": true
     }
   ],

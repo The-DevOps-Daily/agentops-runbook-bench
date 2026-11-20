@@ -47,6 +47,15 @@ ok   host-deny              kubectl get pods --cache-dir /tmp/x
 ok   refused:blast-radius   kubectl patch deployment worker --type=json -p [{"op":"replace","path":"/spec","value":{"replicas":50}}]
 ok   refused:blast-radius   kubectl patch deployment worker --type=json -p [{"op":"add","path":"","value":{"spec":{"replicas":50}}}]
 ok   refused:parse          kubectl patch deployment worker --type=json -p not json
+ok   refused:parse          kubectl patch deployment worker -o yaml -p {"spec":{"replicas":3}}
+ok   refused:parse          kubectl scale deployment/worker --replicas=5 --output=name
+ok   allow                  kubectl -n payments --namespace shop delete pod worker-x
+ok   refused:scope          kubectl --namespace shop -n payments delete pod payments-api-x
+ok   refused:scope          kubectl delete pod payments-api-x -n shop --namespace=payments
+ok   refused:blast-radius   kubectl patch deployment worker -p {"spec":{"replicas":3}} --patch {"spec":{"replicas":50}}
+ok   allow                  kubectl patch deployment worker --patch {"spec":{"replicas":50}} -p {"spec":{"replicas":3}}
+ok   read                   kubectl logs worker-x -p
+ok   approval:blast-radius  kubectl set resources deployment/worker --requests=memory=2Gi
 ok   allow                  kubectl patch deployment worker --type=json -p [{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"4Gi"}]
 ok   allow                  kubectl patch deployment cache --type=json -p [{"op":"replace","path":"/spec/template/spec/volumes/0","value":{"name":"data","emptyDir":{}}}]   <- KNOWN HOLE: swaps the cache PVC for an empty volume; the PVC survives but the cache starts empty
 ok   allow                  kubectl patch deployment api --type=json -p [{"op":"replace","path":"/spec/template/spec/containers/0/env/2","value":{"name":"DB_PASSWORD","value":""}}]   <- KNOWN HOLE: replaces the secret reference with an empty password
@@ -55,4 +64,6 @@ ok   refused:blast-radius   dry-run result: worker 50 replicas (patch on /spec)
 ok   approval:blast-radius  dry-run result: worker 4Gi memory (JSON patch)
 ok   refused:blast-radius   dry-run result: web scaled to 0 by the change
 ok   allow                  dry-run result: web already at 0 (the incident), image change only
+ok   approval:blast-radius  dry-run result: worker memory limit removed
+ok   approval:blast-radius  dry-run result: worker memory request 1Gi
 all assertions held (including the known holes)

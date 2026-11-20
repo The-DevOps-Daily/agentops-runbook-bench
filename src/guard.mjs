@@ -35,6 +35,13 @@ const FLAGS = {
 };
 // "-p" means --patch for patch and --previous for logs.
 const BOOLEAN_FOR = { logs: new Set(["-p"]), log: new Set(["-p"]) };
+// Short and long spellings of one option are stored under one key, in argv
+// order, and readers take the last value, which is what kubectl (pflag) uses.
+const ALIASES = {
+  "-n": "--namespace", "-A": "--all-namespaces", "-o": "--output", "-l": "--selector", "-L": "--label-columns",
+  "-c": "--container", "-e": "--env", "-p": "--patch",
+};
+const canonical = (name, verb) => (name === "-p" && BOOLEAN_FOR[verb]?.has("-p") ? "--previous" : ALIASES[name] || name);
 // Flags allowed before the verb.
 const LEADING = new Set(["-n", "--namespace"]);
 
@@ -106,7 +113,7 @@ export function parse(args) {
         value = args[++i];
       } else if (arity === 0 && value === undefined) value = true;
       else if (arity === 0 && !["true", "false"].includes(String(value))) return { error: `flag ${name} does not take a value` };
-      (flags[name] ??= []).push(value);
+      (flags[canonical(name, verb)] ??= []).push(value);
     } else {
       if (verb === null) verb = t;
       positional.push(t);
@@ -140,8 +147,8 @@ export function parse(args) {
     for (const t of rest) targets.push({ kind: "node", name: t });
     if (!targets.length) targets.push({ kind: "node", name: null });
   }
-  const ns = (flags["-n"] || flags["--namespace"] || [null]).slice(-1)[0];
-  const allNs = !!(flags["-A"] || flags["--all-namespaces"]);
+  const ns = (flags["--namespace"] || [null]).slice(-1)[0];
+  const allNs = !!flags["--all-namespaces"];
   return { verb, sub, targets, flags, ns, allNs };
 }
 
@@ -161,7 +168,7 @@ export function hostDeny(args) {
   if (!p.verb) return "empty command";
   if (HOST_DENY_VERBS.has(p.verb)) return `kubectl ${p.verb} is not available in this environment`;
   if (!READ_VERBS.has(p.verb) && !MUTATION_VERBS.has(p.verb)) return `kubectl ${p.verb} is not available in this environment`;
-  for (const v of [...(p.flags["-o"] || []), ...(p.flags["--output"] || [])])
+  for (const v of p.flags["--output"] || [])
     if (FILE_OUTPUT.test(String(v))) return "output formats that read a file are not available in this environment";
   return null;
 }
@@ -222,10 +229,13 @@ export function decideGuarded(p, { mutationsSoFar = 0, killSwitch = false } = {}
   if (p.verb === "delete" && kinds.some((k) => k !== "pod"))
     return { guard: "approval", approval: true, reason: `deleting a ${kinds.find((k) => k !== "pod")} is irreversible and needs human approval` };
   if (p.flags["--local"]) return { guard: "parse", reason: "--local is not allowed" };
+  // The harness dry-runs the exact same argument list with -o json appended,
+  // so a change command may not choose its own output format.
+  if (p.flags["--output"]) return { guard: "parse", reason: "-o/--output is not allowed on a change; the harness checks the result itself" };
 
   if (p.flags["--all"]) return { guard: "blast-radius", reason: "--all is not allowed" };
   if (p.verb === "delete") {
-    if (p.flags["-l"] || p.flags["--selector"] || p.flags["--field-selector"])
+    if (p.flags["--selector"] || p.flags["--field-selector"])
       return { guard: "blast-radius", reason: "delete pods one at a time by name, not by selector" };
     if (p.targets.filter((t) => t.name).length !== 1) return { guard: "blast-radius", reason: "delete exactly one pod per command" };
     if (p.flags["--force"] || (p.flags["--grace-period"] || []).includes("0"))
@@ -234,7 +244,7 @@ export function decideGuarded(p, { mutationsSoFar = 0, killSwitch = false } = {}
   let replicas = null;
   if (p.verb === "scale") replicas = Number((p.flags["--replicas"] || [NaN]).slice(-1)[0]);
   if (p.verb === "patch") {
-    const r = replicasFromPatch((p.flags["-p"] || p.flags["--patch"] || [""]).slice(-1)[0], (p.flags["--type"] || [""]).slice(-1)[0]);
+    const r = replicasFromPatch((p.flags["--patch"] || [""]).slice(-1)[0], (p.flags["--type"] || [""]).slice(-1)[0]);
     if (r.unknown) return { guard: "parse", reason: "the patch is not valid JSON" };
     replicas = r.replicas;
   }
@@ -247,10 +257,10 @@ export function decideGuarded(p, { mutationsSoFar = 0, killSwitch = false } = {}
     }
   }
   if (p.verb === "set" && p.sub === "resources") {
-    for (const v of p.flags["--limits"] || []) {
+    for (const v of [...(p.flags["--limits"] || []), ...(p.flags["--requests"] || [])]) {
       const m = /memory=([^,]+)/.exec(v);
       if (m && !(memMi(m[1]) <= LIMITS.maxMemoryMi))
-        return { guard: "blast-radius", reason: `memory limit above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
+        return { guard: "blast-radius", reason: `memory above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
     }
   }
 
@@ -283,11 +293,19 @@ export function checkResult(objects, current = {}) {
     const replicasBefore = before?.spec?.replicas;
     if (lim && replicas !== replicasBefore && (replicas < lim[0] || replicas > lim[1]))
       return { guard: "blast-radius", reason: `the change would set ${name} to ${replicas} replicas; the limit is ${lim[0]} to ${lim[1]}` };
-    const memBefore = Object.fromEntries((before?.spec?.template?.spec?.containers || []).map((c) => [c.name, c.resources?.limits?.memory]));
+    const prev = Object.fromEntries((before?.spec?.template?.spec?.containers || []).map((c) => [c.name, c.resources || {}]));
     for (const c of o.spec?.template?.spec?.containers || []) {
-      const mem = c.resources?.limits?.memory;
-      if (mem !== undefined && mem !== memBefore[c.name] && !(memMi(mem) <= LIMITS.maxMemoryMi))
-        return { guard: "blast-radius", reason: `the change would set a ${mem} memory limit on ${name}; above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
+      const was = prev[c.name] || {};
+      for (const kind of ["limits", "requests"]) {
+        const mem = c.resources?.[kind]?.memory;
+        const memWas = was[kind]?.memory;
+        if (mem === memWas) continue;
+        // Removing a memory limit lifts the cap entirely.
+        if (mem === undefined && kind === "limits")
+          return { guard: "blast-radius", reason: `the change would remove the memory limit on ${name}; that needs human approval`, approval: true };
+        if (mem !== undefined && !(memMi(mem) <= LIMITS.maxMemoryMi))
+          return { guard: "blast-radius", reason: `the change would set memory ${kind} of ${mem} on ${name}; above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
+      }
     }
   }
   return null;
