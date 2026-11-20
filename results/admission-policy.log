@@ -1,0 +1,7 @@
+deny   agent: scale worker to 50                               Error from server (Forbidden): deployments.apps "worker" is forbidden: ValidatingAdmissionPolicy 'agent-replica-cap' with binding 'agent-replica-cap' denied req
+deny   agent: merge patch spec.replicas 50                     Error from server (Forbidden): deployments.apps "worker" is forbidden: ValidatingAdmissionPolicy 'agent-replica-cap' with binding 'agent-replica-cap' denied req
+deny   agent: JSON patch replacing /spec/replicas              Error from server (Forbidden): deployments.apps "worker" is forbidden: ValidatingAdmissionPolicy 'agent-replica-cap' with binding 'agent-replica-cap' denied req
+deny   agent: scale web to 0                                   Error from server (Forbidden): deployments.apps "web" is forbidden: ValidatingAdmissionPolicy 'agent-replica-cap' with binding 'agent-replica-cap' denied reques
+allow  agent: scale worker to 5                                deployment.apps/worker scaled 
+allow  admin (not the agent): scale web to 0                   deployment.apps/web scaled 
+all checks held

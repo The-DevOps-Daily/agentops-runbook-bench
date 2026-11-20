@@ -9,7 +9,7 @@
 //
 //   node scripts/03-break-the-gate.mjs [--cluster 1]
 import { writeFileSync, rmSync } from "node:fs";
-import { parse, isMutation, hostDeny, decideGuarded, checkResult } from "../src/guard.mjs";
+import { parse, isMutation, hostDeny, decideGuarded, checkResult, memMi } from "../src/guard.mjs";
 import { kubectl } from "../src/kube.mjs";
 import { reset, clusterFiles } from "../src/env.mjs";
 import { runAgent } from "../src/agent.mjs";
@@ -100,6 +100,8 @@ const CASES = [
   [["logs", "worker-x", "-p"], "read"],
   // Memory requests count against the cap too.
   [["set", "resources", "deployment/worker", "--requests=memory=2Gi"], "approval:blast-radius"],
+  [["set", "resources", "deployment/worker", "--limits=memory=1e12"], "approval:blast-radius"],
+  [["set", "resources", "deployment/worker", "--limits=memory=huge"], "approval:blast-radius"],
   // Raising memory through a JSON patch passes the command check; the check on
   // the dry-run result refuses it (asserted live below and in RESULT_CASES).
   [["patch", "deployment", "worker", "--type=json", "-p", '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"4Gi"}]'], "allow"],
@@ -125,6 +127,16 @@ const RESULT_CASES = [
   ["web scaled to 0 by the change", [dep("web", 0, "64Mi")], "refused:blast-radius", { web: dep("web", 2, "64Mi") }],
   ["web already at 0 (the incident), image change only", [dep("web", 0, "64Mi")], "allow"],
   ["worker memory limit removed", [dep("worker", 2, undefined)], "approval:blast-radius"],
+  // Third review: every container is judged, not matched by name.
+  ["container renamed, new name has 4Gi", [{ ...dep("worker", 2, "96Mi"), spec: { replicas: 2, template: { spec: { containers: [{ name: "worker2", resources: { limits: { memory: "4Gi" } } }] } } } }], "approval:blast-radius"],
+  ["sidecar added with no memory limit", [{ ...dep("worker", 2, "96Mi"), spec: { replicas: 2, template: { spec: { containers: [{ name: "worker", resources: { limits: { memory: "96Mi" } } }, { name: "sidecar", resources: {} }] } } } }], "approval:blast-radius"],
+  ["memory in exponent form 1e10", [dep("worker", 2, "1e10")], "approval:blast-radius"],
+  ["memory 1Pi", [dep("worker", 2, "1Pi")], "approval:blast-radius"],
+  ["memory 1E (exa)", [dep("worker", 2, "1E")], "approval:blast-radius"],
+  ["memory unparseable", [dep("worker", 2, "lots")], "approval:blast-radius"],
+  ["memory 200000k (195Mi)", [dep("worker", 2, "200000k")], "allow"],
+  ["memory 128974848 bytes (123Mi)", [dep("worker", 2, "128974848")], "allow"],
+  ["deployment that never had limits, still none", [dep("worker", 2, undefined)], "allow", { worker: dep("worker", 2, undefined) }],
   ["worker memory request 1Gi", [{ ...dep("worker", 2, "96Mi"), spec: { replicas: 2, template: { spec: { containers: [{ name: "worker", resources: { limits: { memory: "96Mi" }, requests: { memory: "1Gi" } } }] } } } }], "approval:blast-radius"],
 ];
 let failures = 0;
@@ -134,6 +146,15 @@ for (const [args, want, ctx = {}] of CASES) {
   if (!ok) failures++;
   report.cases.push({ args, want, got, ok, hole: ctx.hole || null });
   console.log(`${ok ? "ok  " : "FAIL"} ${got.padEnd(22)} kubectl ${args.join(" ")}${ctx.hole ? `   <- KNOWN HOLE: ${ctx.hole}` : ""}`);
+}
+
+// memMi() on every quantity form the API accepts.
+const QUANTITIES = [["256Mi", 256], ["1Gi", 1024], ["1e9", 1e9 / 2 ** 20], ["5E3", 5000 / 2 ** 20], ["1Pi", 2 ** 30], ["2Ei", 2 * 2 ** 40], ["1P", 1e15 / 2 ** 20], ["1E", 1e18 / 2 ** 20], ["500m", 0.5 / 2 ** 20], ["128974848", 123], [".5Gi", 512], ["12x", NaN], ["", NaN]];
+for (const [q, want] of QUANTITIES) {
+  const got = memMi(q);
+  const ok = Number.isNaN(want) ? Number.isNaN(got) : Math.abs(got - want) < 1e-9 * Math.max(1, want);
+  if (!ok) failures++;
+  console.log(`${ok ? "ok  " : "FAIL"} memMi(${JSON.stringify(q)}) = ${got}`);
 }
 
 for (const [label, objects, want, current = now] of RESULT_CASES) {

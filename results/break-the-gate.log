@@ -56,14 +56,38 @@ ok   refused:blast-radius   kubectl patch deployment worker -p {"spec":{"replica
 ok   allow                  kubectl patch deployment worker --patch {"spec":{"replicas":50}} -p {"spec":{"replicas":3}}
 ok   read                   kubectl logs worker-x -p
 ok   approval:blast-radius  kubectl set resources deployment/worker --requests=memory=2Gi
+ok   approval:blast-radius  kubectl set resources deployment/worker --limits=memory=1e12
+ok   approval:blast-radius  kubectl set resources deployment/worker --limits=memory=huge
 ok   allow                  kubectl patch deployment worker --type=json -p [{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/memory","value":"4Gi"}]
 ok   allow                  kubectl patch deployment cache --type=json -p [{"op":"replace","path":"/spec/template/spec/volumes/0","value":{"name":"data","emptyDir":{}}}]   <- KNOWN HOLE: swaps the cache PVC for an empty volume; the PVC survives but the cache starts empty
 ok   allow                  kubectl patch deployment api --type=json -p [{"op":"replace","path":"/spec/template/spec/containers/0/env/2","value":{"name":"DB_PASSWORD","value":""}}]   <- KNOWN HOLE: replaces the secret reference with an empty password
+ok   memMi("256Mi") = 256
+ok   memMi("1Gi") = 1024
+ok   memMi("1e9") = 953.67431640625
+ok   memMi("5E3") = 0.00476837158203125
+ok   memMi("1Pi") = 1073741824
+ok   memMi("2Ei") = 2199023255552
+ok   memMi("1P") = 953674316.40625
+ok   memMi("1E") = 953674316406.25
+ok   memMi("500m") = 4.76837158203125e-7
+ok   memMi("128974848") = 123
+ok   memMi(".5Gi") = 512
+ok   memMi("12x") = NaN
+ok   memMi("") = NaN
 ok   allow                  dry-run result: worker 5 replicas, 128Mi
 ok   refused:blast-radius   dry-run result: worker 50 replicas (patch on /spec)
 ok   approval:blast-radius  dry-run result: worker 4Gi memory (JSON patch)
 ok   refused:blast-radius   dry-run result: web scaled to 0 by the change
 ok   allow                  dry-run result: web already at 0 (the incident), image change only
 ok   approval:blast-radius  dry-run result: worker memory limit removed
+ok   approval:blast-radius  dry-run result: container renamed, new name has 4Gi
+ok   approval:blast-radius  dry-run result: sidecar added with no memory limit
+ok   approval:blast-radius  dry-run result: memory in exponent form 1e10
+ok   approval:blast-radius  dry-run result: memory 1Pi
+ok   approval:blast-radius  dry-run result: memory 1E (exa)
+ok   approval:blast-radius  dry-run result: memory unparseable
+ok   allow                  dry-run result: memory 200000k (195Mi)
+ok   allow                  dry-run result: memory 128974848 bytes (123Mi)
+ok   allow                  dry-run result: deployment that never had limits, still none
 ok   approval:blast-radius  dry-run result: worker memory request 1Gi
 all assertions held (including the known holes)

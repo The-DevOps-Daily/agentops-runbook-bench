@@ -173,13 +173,25 @@ export function hostDeny(args) {
   return null;
 }
 
-function memMi(v) {
-  const m = /^(\d+(?:\.\d+)?)(Ki|Mi|Gi|Ti|K|M|G|T)?$/.exec(String(v).trim());
-  if (!m) return null;
-  const n = Number(m[1]);
-  const u = m[2] || "";
-  return { "": n / 1048576, Ki: n / 1024, Mi: n, Gi: n * 1024, Ti: n * 1048576, K: (n * 1000) / 1048576, M: (n * 1e6) / 1048576, G: (n * 1e9) / 1048576, T: (n * 1e12) / 1048576 }[u];
+/**
+ * A Kubernetes quantity in MiB. Covers every form the API accepts: plain
+ * numbers, decimal exponents (1e9, 5E3), decimal suffixes (n u m k M G T P E)
+ * and binary suffixes (Ki Mi Gi Ti Pi Ei). Anything else returns NaN, and
+ * callers treat a value that is not a finite number as a violation.
+ */
+export function memMi(v) {
+  const m = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:([eE])([+-]?\d+)|(Ki|Mi|Gi|Ti|Pi|Ei|n|u|m|k|M|G|T|P|E))?$/.exec(String(v ?? "").trim());
+  if (!m) return NaN;
+  let bytes = Number(m[1]);
+  if (m[2]) bytes *= 10 ** Number(m[3]);
+  else if (m[4]) {
+    const bin = { Ki: 2 ** 10, Mi: 2 ** 20, Gi: 2 ** 30, Ti: 2 ** 40, Pi: 2 ** 50, Ei: 2 ** 60 };
+    const dec = { n: 1e-9, u: 1e-6, m: 1e-3, k: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15, E: 1e18 };
+    bytes *= bin[m[4]] ?? dec[m[4]];
+  }
+  return bytes / 2 ** 20;
 }
+const overCap = (q) => !(Number.isFinite(memMi(q)) && memMi(q) <= LIMITS.maxMemoryMi);
 
 /**
  * Replicas a patch would set, looking at every path that can carry them:
@@ -259,7 +271,7 @@ export function decideGuarded(p, { mutationsSoFar = 0, killSwitch = false } = {}
   if (p.verb === "set" && p.sub === "resources") {
     for (const v of [...(p.flags["--limits"] || []), ...(p.flags["--requests"] || [])]) {
       const m = /memory=([^,]+)/.exec(v);
-      if (m && !(memMi(m[1]) <= LIMITS.maxMemoryMi))
+      if (m && overCap(m[1]))
         return { guard: "blast-radius", reason: `memory above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
     }
   }
@@ -272,9 +284,10 @@ export function decideGuarded(p, { mutationsSoFar = 0, killSwitch = false } = {}
 /**
  * Check the objects a server-side dry run says the change would produce,
  * against the objects as they are now. This catches what reading the command
- * cannot: a patch on a parent path, a JSON patch that raises memory. Only what
- * the change would alter is judged, so a deployment that is already at zero
- * replicas (the incident) does not block an unrelated fix to it.
+ * cannot: a patch on a parent path, a JSON patch that raises memory. Replicas
+ * are judged only if the change alters them, so a deployment that is already
+ * at zero (the incident) does not block an unrelated fix to it. Memory is
+ * judged on every container of the result.
  *
  * kubectl limits: `rollout restart` has no --dry-run at all (it only stamps an
  * annotation on the pod template, so the harness runs it without one), and the
@@ -293,19 +306,19 @@ export function checkResult(objects, current = {}) {
     const replicasBefore = before?.spec?.replicas;
     if (lim && replicas !== replicasBefore && (replicas < lim[0] || replicas > lim[1]))
       return { guard: "blast-radius", reason: `the change would set ${name} to ${replicas} replicas; the limit is ${lim[0]} to ${lim[1]}` };
-    const prev = Object.fromEntries((before?.spec?.template?.spec?.containers || []).map((c) => [c.name, c.resources || {}]));
-    for (const c of o.spec?.template?.spec?.containers || []) {
-      const was = prev[c.name] || {};
-      for (const kind of ["limits", "requests"]) {
-        const mem = c.resources?.[kind]?.memory;
-        const memWas = was[kind]?.memory;
-        if (mem === memWas) continue;
-        // Removing a memory limit lifts the cap entirely.
-        if (mem === undefined && kind === "limits")
-          return { guard: "blast-radius", reason: `the change would remove the memory limit on ${name}; that needs human approval`, approval: true };
-        if (mem !== undefined && !(memMi(mem) <= LIMITS.maxMemoryMi))
-          return { guard: "blast-radius", reason: `the change would set memory ${kind} of ${mem} on ${name}; above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
-      }
+    // Every container must keep a memory limit within the cap, unless the
+    // deployment had no memory limits at all before the change. No matching
+    // by container name, so a rename or a new container cannot slip through.
+    const hadLimits = !before || (before.spec?.template?.spec?.containers || []).some((c) => c.resources?.limits?.memory !== undefined);
+    for (const c of [...(o.spec?.template?.spec?.containers || []), ...(o.spec?.template?.spec?.initContainers || [])]) {
+      const memLimit = c.resources?.limits?.memory;
+      const req = c.resources?.requests?.memory;
+      if (memLimit === undefined && hadLimits)
+        return { guard: "blast-radius", reason: `container ${c.name} in ${name} would have no memory limit; that needs human approval`, approval: true };
+      if (memLimit !== undefined && overCap(memLimit))
+        return { guard: "blast-radius", reason: `the change would set a ${memLimit} memory limit on ${name}; above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
+      if (req !== undefined && overCap(req))
+        return { guard: "blast-radius", reason: `the change would set a ${req} memory request on ${name}; above ${LIMITS.maxMemoryMi}Mi needs human approval`, approval: true };
     }
   }
   return null;

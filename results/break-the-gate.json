@@ -723,6 +723,30 @@
     },
     {
       "args": [
+        "set",
+        "resources",
+        "deployment/worker",
+        "--limits=memory=1e12"
+      ],
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
+        "set",
+        "resources",
+        "deployment/worker",
+        "--limits=memory=huge"
+      ],
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true,
+      "hole": null
+    },
+    {
+      "args": [
         "patch",
         "deployment",
         "worker",
@@ -799,6 +823,60 @@
       "label": "worker memory limit removed",
       "want": "approval:blast-radius",
       "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "container renamed, new name has 4Gi",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "sidecar added with no memory limit",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "memory in exponent form 1e10",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "memory 1Pi",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "memory 1E (exa)",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "memory unparseable",
+      "want": "approval:blast-radius",
+      "got": "approval:blast-radius",
+      "ok": true
+    },
+    {
+      "label": "memory 200000k (195Mi)",
+      "want": "allow",
+      "got": "allow",
+      "ok": true
+    },
+    {
+      "label": "memory 128974848 bytes (123Mi)",
+      "want": "allow",
+      "got": "allow",
+      "ok": true
+    },
+    {
+      "label": "deployment that never had limits, still none",
+      "want": "allow",
+      "got": "allow",
       "ok": true
     },
     {
